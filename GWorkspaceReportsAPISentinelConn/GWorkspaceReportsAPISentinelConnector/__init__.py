@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import requests
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import azure.functions as func
@@ -16,15 +17,16 @@ import time
 import re
 from .state_manager import StateManager
 
-customer_id = os.environ['WorkspaceID'] 
+customer_id = os.environ['WorkspaceID']
 shared_key = os.environ['WorkspaceKey']
 pickle_str = os.environ['GooglePickleString']
 pickle_string = base64.b64decode(pickle_str)
 connection_string = os.environ['AzureWebJobsStorage']
 logAnalyticsUri = os.environ.get('logAnalyticsUri')
+tokenFilePath = '/tmp/token.json'
 SCOPES = ['https://www.googleapis.com/auth/admin.reports.audit.readonly']
 activities = [
-            "access_transparency", 
+            "access_transparency",
             "admin",
             "calendar",
             "chat",
@@ -33,20 +35,20 @@ activities = [
             "gplus",
             "groups",
             "groups_enterprise",
-            "jamboard", 
-            "login", 
-            "meet", 
-            "mobile", 
-            "rules", 
-            "saml", 
-            "token", 
-            "user_accounts", 
-            "context_aware_access", 
-            "chrome", 
+            "jamboard",
+            "login",
+            "meet",
+            "mobile",
+            "rules",
+            "saml",
+            "token",
+            "user_accounts",
+            "context_aware_access",
+            "chrome",
             "data_studio"
             ]
 
-if ((logAnalyticsUri in (None, '') or str(logAnalyticsUri).isspace())):    
+if ((logAnalyticsUri in (None, '') or str(logAnalyticsUri).isspace())):
     logAnalyticsUri = 'https://' + customer_id + '.ods.opinsights.azure.com'
 pattern = r'https:\/\/([\w\-]+)\.ods\.opinsights\.azure.([a-zA-Z\.]+)$'
 match = re.match(pattern,str(logAnalyticsUri))
@@ -54,26 +56,31 @@ if(not match):
     raise Exception("Google Workspace Reports: Invalid Log Analytics Uri.")
 
 def get_credentials():
-    creds = None    
+    creds = None
     if os.path.exists(tokenFilePath):
         creds = Credentials.from_authorized_user_file(tokenFilePath, SCOPES)
+        logging.info("fichier json existe")
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            logging.info(f"token expire le: {creds.expiry}")
             creds.refresh(Request())
+            logging.info(f"nouveau token expire le: {creds.expiry}")
             logging.info("Token refreshed!!")
-    else:
-        if pickle_string:
-            try:
-                creds = pickle.loads(pickle_string)
-            except Exception as pickle_read_exception:
-                logging.error('Error while loading pickle string: {}'.format(pickle_read_exception))
         else:
-            raise Exception("Google Workspace Reports: Pickle_string is empty. Exit.")
-    # Save the credentials for the next run    
-    with open(tokenFilePath, 'w') as token:
-        token.write(creds.to_json())
-    return creds
+            if pickle_string:
+                logging.info("travaux sur la pickle directement")
+                try:
+                    creds = pickle.loads(pickle_string)
+                    logging.info(f"pickel token expire le {creds.expiry} et son status est {creds.expired}")
+                except Exception as pickle_read_exception:
+                    logging.error('Error while loading pickle string: {}'.format(pickle_read_exception))
+            else:
+                raise Exception("Google Workspace Reports: Pickle_string is empty. Exit.")
 
+        # Save the credentials for the next run
+        with open(tokenFilePath, 'w') as token:
+            token.write(creds.to_json())
+    return creds
 
 def generate_date():
     current_time = datetime.datetime.utcnow().replace(second=0, microsecond=0) - datetime.timedelta(minutes=10)
