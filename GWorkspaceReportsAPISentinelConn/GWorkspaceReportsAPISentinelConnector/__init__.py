@@ -72,6 +72,11 @@ def get_credentials():
                 try:
                     creds = pickle.loads(pickle_string)
                     logging.info(f"pickel token expire le {creds.expiry} et son status est {creds.expired}")
+                    if creds.expired:
+                        print("pas de refresh necessaire")
+                    else:
+                        creds.refresh(Request())
+                        print(f"le token a ete rafraichie il expire le {creds.expiry}")
                 except Exception as pickle_read_exception:
                     logging.error('Error while loading pickle string: {}'.format(pickle_read_exception))
             else:
